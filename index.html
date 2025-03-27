@@ -1,0 +1,182 @@
+<html>
+<head>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas class="canvas"></canvas>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
+    <script>
+        const canvas = document.querySelector('.canvas');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const gl = canvas.getContext('webgl');
+        if (!gl) {
+            console.error('WebGL not supported');
+        }
+
+        const vertexShaderSource = `
+            attribute vec3 position;
+            uniform mat4 modelViewMatrix;
+            uniform mat4 projectionMatrix;
+            void main() {
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `;
+
+        const fragmentShaderSource = `
+            precision mediump float;
+            uniform vec4 color;
+            void main() {
+                gl_FragColor = color;
+            }
+        `;
+
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            console.error(gl.getProgramInfoLog(program));
+        }
+
+        gl.useProgram(program);
+
+        const positionAttributeLocation = gl.getAttribLocation(program, 'position');
+        const modelViewMatrixLocation = gl.getUniformLocation(program, 'modelViewMatrix');
+        const projectionMatrixLocation = gl.getUniformLocation(program, 'projectionMatrix');
+        const colorLocation = gl.getUniformLocation(program, 'color');
+
+        const positions = [
+            -0.75, -0.75,  0.0,
+             0.75, -0.75,  0.0,
+            -0.75,  0.75,  0.0,
+             0.75, -0.75,  0.0,
+             0.75,  0.75,  0.0,
+            -0.75,  0.75,  0.0
+        ];
+
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        gl.enableVertexAttribArray(positionAttributeLocation);
+        gl.vertexAttribPointer(positionAttributeLocation, 3, gl.FLOAT, false, 0, 0);
+
+        const projectionMatrix = mat4.create();
+        mat4.perspective(projectionMatrix, Math.PI / 4, canvas.width / canvas.height, 0.1, 100.0);
+
+        const rows = 20;
+        const cols = 20;
+        const spacing = 1.75;
+        const cards = [];
+
+        function getRandomColor() {
+            const r = Math.random() * 0.8 + 0.2; // Avoid white by limiting the range
+            const g = Math.random() * 0.8 + 0.2;
+            const b = Math.random() * 0.8 + 0.2;
+            return [r, g, b, 1.0];
+        }
+
+        for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+                const modelViewMatrix = mat4.create();
+                const xOffset = (col - cols / 2) * spacing;
+                const yOffset = (rows / 2 - row) * spacing;
+                mat4.translate(modelViewMatrix, modelViewMatrix, [xOffset, yOffset, Math.random() * -50 - 10]);
+                const color = getRandomColor();
+                cards.push({ modelViewMatrix, color, targetZ: -20 });
+            }
+        }
+
+        function easeOutExpo(x) {
+            return x === 1 ? 1 : 1 - Math.pow(2, -10 * x);
+        }
+
+        let animationProgress = 0;
+        const animationDuration = 100000; // in ms
+
+        function animateCards(timestamp) {
+            if (animationProgress < 1) {
+                animationProgress = Math.min((timestamp / animationDuration), 1);
+
+                cards.forEach((card) => {
+                    const progress = easeOutExpo(animationProgress);
+                    const currentZ = card.modelViewMatrix[14];
+                    const newZ = card.targetZ;
+                    card.modelViewMatrix[14] = currentZ + (newZ - currentZ) * progress;
+                });
+            }
+
+            render();
+            if (animationProgress < 1) {
+                requestAnimationFrame(animateCards);
+            }
+        }
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            const mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+
+            cards.forEach((card, index) => {
+                const col = index % cols;
+                const row = Math.floor(index / cols);
+                const cardX = (col - cols / 2) * spacing / 10;
+                const cardY = (rows / 2 - row) * spacing / 10;
+
+                if (
+                    mouseX > cardX - 0.1 && mouseX < cardX + 0.1 &&
+                    mouseY > cardY - 0.1 && mouseY < cardY + 0.1
+                ) {
+                    card.isHovered = true;
+                } else {
+                    card.isHovered = false;
+                }
+            });
+        });
+
+        function render() {
+            gl.clearColor(1.0, 1.0, 1.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.uniformMatrix4fv(projectionMatrixLocation, false, projectionMatrix);
+
+            cards.forEach((card) => {
+                const modelViewMatrix = mat4.clone(card.modelViewMatrix);
+                if (card.isHovered) {
+                    mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, 0.5]);
+                }
+                gl.uniformMatrix4fv(modelViewMatrixLocation, false, modelViewMatrix);
+                gl.uniform4fv(colorLocation, card.color);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+            });
+        }
+
+        requestAnimationFrame(animateCards);
+    </script>
+</body>
+</html>
