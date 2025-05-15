@@ -226,16 +226,6 @@
           }
         }
       }
-      // for (let row = 0; row < rows; row++) {
-      //     for (let col = 0; col < cols; col++) {
-      //         const modelViewMatrix = mat4.create();
-      //         const xOffset = (col - cols / 2) * spacing;
-      //         const yOffset = (rows / 2 - row) * spacing;
-      //         mat4.translate(modelViewMatrix, modelViewMatrix, [xOffset, yOffset, Math.random() * -50 - 10]);
-      //         const color = getRandomColor();
-      //         cards.push({ modelViewMatrix, color, targetZ: -20 });
-      //     }
-      // }
 
       function easeOutExpo(x) {
         return x === 1 ? 1 : 1 - Math.pow(2, -10 * x);
@@ -261,30 +251,105 @@
           requestAnimationFrame(animateCards);
         }
       }
-
       canvas.addEventListener("mousemove", (e) => {
         const rect = canvas.getBoundingClientRect();
         const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         const mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
 
-        cards.forEach((card, index) => {
-          const col = index % cols;
-          const row = Math.floor(index / cols);
-          const cardX = ((col - cols / 2) * spacing) / 10;
-          const cardY = ((rows / 2 - row) * spacing) / 10;
+        cards.forEach((card) => {
+          const modelViewMatrix = card.modelViewMatrix;
 
-          if (
-            mouseX > cardX - 0.1 &&
-            mouseX < cardX + 0.1 &&
-            mouseY > cardY - 0.1 &&
-            mouseY < cardY + 0.1
-          ) {
-            card.isHovered = true;
-          } else {
-            card.isHovered = false;
+          // 카드의 로컬 꼭짓점 (정육면체 평면 기준)
+          const corners = [
+            [-0.5, -0.5, 0, 1],
+            [0.5, -0.5, 0, 1],
+            [0.5, 0.5, 0, 1],
+            [-0.5, 0.5, 0, 1],
+          ];
+
+          let minX = Infinity,
+            minY = Infinity,
+            maxX = -Infinity,
+            maxY = -Infinity;
+
+          for (const corner of corners) {
+            const local = vec4.fromValues(...corner);
+            const world = vec4.create();
+            vec4.transformMat4(world, local, modelViewMatrix);
+
+            const clip = vec4.create();
+            vec4.transformMat4(clip, world, projectionMatrix);
+            vec4.scale(clip, clip, 1 / clip[3]);
+
+            minX = Math.min(minX, clip[0]);
+            maxX = Math.max(maxX, clip[0]);
+            minY = Math.min(minY, clip[1]);
+            maxY = Math.max(maxY, clip[1]);
           }
+
+          card.isHovered =
+            mouseX >= minX &&
+            mouseX <= maxX &&
+            mouseY >= minY &&
+            mouseY <= maxY;
         });
       });
+
+      // canvas.addEventListener("mousemove", (e) => {
+      //   const rect = canvas.getBoundingClientRect();
+      //   const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      //   const mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+
+      //   const invProjectionMatrix = mat4.create();
+      //   mat4.invert(invProjectionMatrix, projectionMatrix);
+
+      //   const mouseClip = vec4.fromValues(mouseX, mouseY, -1.0, 1.0);
+      //   const mouseView = vec4.create();
+      //   vec4.transformMat4(mouseView, mouseClip, invProjectionMatrix);
+      //   vec4.scale(mouseView, mouseView, 1 / mouseView[3]);
+
+      //   cards.forEach((card) => {
+      //     const modelViewMatrix = card.modelViewMatrix;
+
+      //     const cardCenter = vec4.fromValues(0, 0, 0, 1);
+      //     const worldPos = vec4.create();
+      //     vec4.transformMat4(worldPos, cardCenter, modelViewMatrix);
+
+      //     const cardScreen = vec4.create();
+      //     vec4.transformMat4(cardScreen, worldPos, projectionMatrix);
+      //     vec4.scale(cardScreen, cardScreen, 1 / cardScreen[3]);
+
+      //     const dx = mouseX - cardScreen[0];
+      //     const dy = mouseY - cardScreen[1];
+      //     const distance = Math.sqrt(dx * dx + dy * dy);
+
+      //     card.isHovered = distance < 0.1;
+      //   });
+      // });
+
+      // canvas.addEventListener("mousemove", (e) => {
+      //   const rect = canvas.getBoundingClientRect();
+      //   const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      //   const mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+
+      //   cards.forEach((card, index) => {
+      //     const col = index % cols;
+      //     const row = Math.floor(index / cols);
+      //     const cardX = ((col - cols / 2) * spacing) / 10;
+      //     const cardY = ((rows / 2 - row) * spacing) / 10;
+
+      //     if (
+      //       mouseX > cardX - 0.1 &&
+      //       mouseX < cardX + 0.1 &&
+      //       mouseY > cardY - 0.1 &&
+      //       mouseY < cardY + 0.1
+      //     ) {
+      //       card.isHovered = true;
+      //     } else {
+      //       card.isHovered = false;
+      //     }
+      //   });
+      // });
 
       function render() {
         gl.clearColor(1.0, 1.0, 1.0, 1.0);
